@@ -1,6 +1,6 @@
 # ChatBot_Agentic_RAG
 
-agentic_rag_project/
+agentic_rag_project/ <br>
 ├── frontend/                     # React + Vite frontend
 │   ├── public/
 │   ├── src/
