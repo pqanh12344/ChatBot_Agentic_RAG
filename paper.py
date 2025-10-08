@@ -267,3 +267,44 @@ print("\n📊 Classification Report:")
 print(classification_report(true[data.test_mask.cpu().numpy()],
                             pred[data.test_mask.cpu().numpy()],
                             target_names=le.classes_))
+
+
+
+
+#########################
+
+1. Hiểu về Fecograph Paper
+
+a) Mục tiêu của FeCoGraph:
+Xây dựng mô hình Federated Graph Contrastive Learning cho Network Intrusion Detection (NIDS) trong bối cảnh few-shot (ít dữ liệu tấn công).
+
+b) các luồng
+
+Data => line graph => encoder (dùng Graph Transformer) => Constrative and classification
+
+b) giải pháp
+Encoder của FeCoGraph Thường là Graph Neural Network (GCN hoặc GAT) → học embedding cho các node (thiết bị hoặc flow mạng).
+=> Vấn đề: GCN hoặc GAT chỉ truyền thông tin cục bộ (local neighborhood) → khó nắm mối liên hệ toàn cục trong mạng IoT → Graph Transformer có thể thay thế để cải thiện.
+
+
+2. Graph Transformer
+
+- Nguồn gốc: xuất phát từ Transformer (self-attention) trong NLP, mở rộng để áp dụng cho đồ thị.
+- Cơ chế hoạt động: Thay vì “từ” → attention toàn bộ “node”. và nó Dùng attention weight có bias theo thông tin cạnh (edge) hoặc vị trí trong graph.
+
+- Lợi thế:
++ Học được mối quan hệ dài hạn giữa các node, không chỉ láng giềng.
++ Giữ được cấu trúc đồ thị phức tạp.
+
+- Ví dụ cụ thể:
++ Graphormer (Microsoft, 2021): dùng distance encoding và edge encoding.
++ Trong PyTorch Geometric: lớp TransformerConv(in_channels, out_channels, heads=8) có thể thay GCNConv.
+
+3. Kiến truc Graph Transformer
+
+Có 2 khối TransformerConv → mỗi khối tương đương 1 layer attention-based graph block. Mỗi block đều có: Multi-head Graph Attention => Message passing (từ các node láng giềng) (Edge-based message passing) => Dropout + ReLU
+
+Sau đó là 1 Linear layer (classifier).
+
+
+
