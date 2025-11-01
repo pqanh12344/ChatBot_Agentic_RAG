@@ -1,1 +1,2 @@
 *.zip filter=lfs diff=lfs merge=lfs -text
+mamba-130m-hf.zip filter=lfs diff=lfs merge=lfs -text
