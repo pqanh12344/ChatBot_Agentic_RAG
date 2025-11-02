@@ -181,3 +181,143 @@ def train_mamba_vsfc(base_path="UIT-VSFC", model_name="state-spaces/mamba-130m-h
 ============================================================
 if __name__ == "__main__":
     train_mamba_vsfc()
+
+
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
+
+sentence = "I love AI"
+tokens = tokenizer.tokenize(sentence)
+ids = tokenizer.encode(sentence, return_tensors="pt")
+
+print("Tokens:", tokens)
+print("Token IDs:", ids)
+print("Vocabulary size:", tokenizer.vocab_size)
+
+d_model = 4
+embedding = nn.Embedding(tokenizer.vocab_size, d_model)
+
+hidden_states = embedding(ids)  # (B=1, L, d_model)
+print("Hidden states shape:", hidden_states.shape)
+
+expand = 2
+d_inner = d_model * expand  # 8
+d_conv = 2
+dt_rank = 2
+d_state = 1
+
+in_proj = nn.Linear(d_model, d_inner*2, bias=False)
+conv1d = nn.Conv1d(
+    in_channels=d_inner,
+    out_channels=d_inner,
+    bias=False,
+    kernel_size=d_conv,
+    groups=d_inner,
+    padding=d_conv - 1
+)
+act = nn.SiLU()
+x_proj = nn.Linear(d_inner, dt_rank + 2 * d_state, bias=False)
+dt_proj = nn.Linear(dt_rank, d_inner, bias=True)
+
+B, L, _ = hidden_states.shape
+
+xz = in_proj(hidden_states)
+x, z = torch.chunk(xz, 2, dim=2)
+print("\nIn_proj -> x shape:", x.shape, "| z shape:", z.shape)
+
+# (b) Conv1d causal
+x_perm = x.permute(0, 2, 1)           # (B, d_inner, L)
+x_conv = conv1d(x_perm)[..., :L]      # causal conv
+x_conv_act = act(x_conv)
+x = x_conv_act.permute(0, 2, 1)       # (B, L, d_inner)
+print("After conv+SiLU -> x shape:", x.shape)
+
+x_flat = x.reshape(B * L, d_inner)
+x_db = x_proj(x_flat)
+dt_flat = x_db[:, :dt_rank]
+B_flat = x_db[:, dt_rank:dt_rank + d_state]
+C_flat = x_db[:, dt_rank + d_state:dt_rank + 2 * d_state]
+
+print("\nRaw dt, B, C:")
+print("dt_flat:", dt_flat[:3])
+print("B_flat:", B_flat[:3])
+print("C_flat:", C_flat[:3])
+
+dt_scaled = dt_proj(dt_flat)
+print("\nScaled dt:", dt_scaled[:3])
+
+A_log = torch.log(torch.arange(1, d_state + 1).float()).repeat(d_inner, 1)
+A = -torch.exp(A_log)
+D = torch.ones(d_inner)
+
+print("\nA:", A[:3])
+print("D:", D[:3])
+
+print("\n✅ Ta đã có đủ đầu vào cho SSM scan:")
+print(" - dt_scaled (Δt):", dt_scaled.shape)
+print(" - B_flat:", B_flat.shape)
+print(" - C_flat:", C_flat.shape)
+print(" - A:", A.shape)
+print(" - D:", D.shape)
+
+
+# import torch
+# import torch.nn.functional as F
+
+# # Giả sử ta có các giá trị từ phần trước
+# torch.manual_seed(42)
+
+# B = 1          # batch size
+# L = 3          # "I love AI"
+# d_inner = 8
+# d_state = 1
+
+# # Tạo x (đầu ra sau conv) ngẫu nhiên cho minh họa
+# x = torch.randn(B, L, d_inner)
+
+# # Giả lập tham số A, B, C, D, dt
+# A = -torch.exp(torch.randn(d_inner, d_state))    # hệ số suy giảm
+# B_param = torch.randn(B, L, d_state)             # input-to-state
+# C_param = torch.randn(B, L, d_state)             # state-to-output
+# D = torch.ones(d_inner)                          # residual
+# dt = F.softplus(torch.randn(B, L, d_inner))      # thời gian trễ dương
+
+# # Khởi tạo hidden state ban đầu
+# h = torch.zeros(B, d_inner, d_state)
+
+# # Danh sách lưu output
+# y_list = []
+
+# print("=== Bắt đầu SSM scan ===\n")
+# for t in range(L):
+#     # Lấy từng token
+#     x_t = x[:, t, :]             # (B, d_inner)
+#     dt_t = dt[:, t, :]           # (B, d_inner)
+#     B_t = B_param[:, t, :]       # (B, d_state)
+#     C_t = C_param[:, t, :]       # (B, d_state)
+
+#     # Tính ma trận rời rạc hóa
+#     dA = torch.exp(dt_t.unsqueeze(-1) * A)       # (B, d_inner, d_state)
+#     dB = dt_t.unsqueeze(-1) * B_t.unsqueeze(1)   # (B, d_inner, d_state)
+
+#     # Cập nhật hidden state
+#     h = h * dA + x_t.unsqueeze(-1) * dB          # (B, d_inner, d_state)
+
+#     # Tính output
+#     y_t = torch.einsum("bdn,bn->bd", h, C_t) + D * x_t
+#     y_list.append(y_t)
+
+#     print(f"Step {t+1}:")
+#     print(f"  x_t shape: {x_t.shape}")
+#     print(f"  h_t[0, :3]: {h[0, :3, 0].detach().numpy()}")
+#     print(f"  y_t[0, :3]: {y_t[0, :3].detach().numpy()}")
+#     print()
+
+# # Gộp lại output toàn chuỗi
+# y = torch.stack(y_list, dim=1)
+# print("Output y shape:", y.shape)
